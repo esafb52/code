@@ -1,0 +1,145 @@
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+
+namespace ConsoleAppAzmoon
+{
+    public class Program
+    {
+        private static byte[] GenerateKey(string password)
+        {
+            byte[] result;
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                result = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            }
+            return result;
+        }
+
+        private static byte[] GenerateIV(string password)
+        {
+            byte[] result;
+            using (MD5 md5 = MD5.Create())
+            {
+                result = md5.ComputeHash(Encoding.UTF8.GetBytes(password));
+            }
+            return result;
+        }
+        private static void EncryptFile(string inputFile, string outputFile, string password, Action<long, long> indicate, CancellationToken cancellation)
+        {
+            try
+            {
+                byte[] originalFileNameBytes = Encoding.UTF8.GetBytes(Path.GetFileName(inputFile));
+                using (FileStream fsInput = new FileStream(inputFile, FileMode.Open))
+                {
+                    using (FileStream fsOutput = new FileStream(outputFile, FileMode.Create))
+                    {
+                        byte[] key = GenerateKey(password);
+                        byte[] iv = GenerateIV(password);
+                        using (Aes aes = Aes.Create())
+                        {
+                            aes.Key = key;
+                            aes.IV = iv;
+                            ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+                            fsOutput.Write(BitConverter.GetBytes(originalFileNameBytes.Length), 0, 4);
+                            fsOutput.Write(originalFileNameBytes, 0, originalFileNameBytes.Length);
+                            using (CryptoStream cs = new CryptoStream(fsOutput, encryptor, CryptoStreamMode.Write))
+                            {
+                                int data;
+                                while ((data = fsInput.ReadByte()) != -1 && !cancellation.IsCancellationRequested)
+                                {
+                                    cs.WriteByte((byte)data);
+                                    if (indicate != null)
+                                    {
+                                        indicate(fsInput.Length, fsInput.Position);
+                                    }
+                                }
+                                cs.Close();
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+
+                throw ex;
+            }
+        }
+
+        private static void DecryptFile(string inputFile, string outputFile, string password, Action<long, long> indicate, CancellationToken cancellation)
+        {
+            using (FileStream fsInput = new FileStream(inputFile, FileMode.Open))
+            {
+                byte[] originalFileNameLengthBytes = new byte[4];
+                fsInput.Read(originalFileNameLengthBytes, 0, 4);
+                int originalFileNameLength = BitConverter.ToInt32(originalFileNameLengthBytes, 0);
+                byte[] originalFileNameBytes = new byte[originalFileNameLength];
+                fsInput.Read(originalFileNameBytes, 0, originalFileNameLength);
+                string originalFileName = Encoding.UTF8.GetString(originalFileNameBytes);
+                using (FileStream fsOutput = new FileStream(Path.Combine(outputFile, originalFileName), FileMode.Create))
+                {
+                    byte[] key = GenerateKey(password);
+                    byte[] iv = GenerateIV(password);
+                    using (Aes aes = Aes.Create())
+                    {
+                        aes.Key = key;
+                        aes.IV = iv;
+                        ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                        using (CryptoStream cs = new CryptoStream(fsInput, decryptor, CryptoStreamMode.Read))
+                        {
+                            int data;
+                            while ((data = cs.ReadByte()) != -1 && !cancellation.IsCancellationRequested)
+                            {
+                                fsOutput.WriteByte((byte)data);
+                                if (indicate != null)
+                                {
+                                    indicate(fsInput.Length, fsInput.Position);
+                                }
+                            }
+                            cs.Close();
+                        }
+                    }
+                }
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            try
+            {
+
+                Console.WriteLine("start");
+                string exam = @"D:\\Az\\book.pdf";
+                string exam_out = "D:\\Az\\bookRamaz.pdf";
+               
+               
+                Action<long, long> action = (a, b) =>
+                {
+                    try
+                    {
+                        Console.WriteLine($"proccess {b} from {a} ");
+                    }
+                    catch (Exception ex)
+                    {
+                        throw ex;
+                    }
+                };
+                CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+                CancellationToken cancellationToken = cancellationTokenSource.Token;
+                EncryptFile(exam, exam_out, "maz@@123423232323", action, cancellationToken);
+
+                Console.WriteLine("end !!!!!");
+            }
+            catch (Exception ex)
+            {
+
+                Console.WriteLine(ex.Message);
+            }
+            Console.ReadKey();
+
+        }
+    }
+}
